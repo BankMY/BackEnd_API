@@ -194,10 +194,13 @@ namespace APIBankingDiplom.Migrations
                         .Annotation("SqlServer:Identity", "1, 1"),
                     TransactionType = table.Column<string>(type: "nvarchar(32)", maxLength: 32, nullable: false),
                     Amount = table.Column<decimal>(type: "decimal(15,2)", nullable: false),
-                    Currency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
+                    SenderCurrency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
+                    ReceiverCurrency = table.Column<string>(type: "nvarchar(3)", maxLength: 3, nullable: false),
                     TransactionDate = table.Column<DateTime>(type: "datetime2", nullable: false),
                     Description = table.Column<string>(type: "nvarchar(max)", nullable: false),
+                    SenderCardId = table.Column<int>(type: "int", nullable: false),
                     SenderBalanceId = table.Column<int>(type: "int", nullable: false),
+                    ReceiverCardId = table.Column<int>(type: "int", nullable: false),
                     ReceiverBalanceId = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
@@ -213,6 +216,18 @@ namespace APIBankingDiplom.Migrations
                         name: "FK_Transactions_CardBalances_SenderBalanceId",
                         column: x => x.SenderBalanceId,
                         principalTable: "CardBalances",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Transactions_Cards_ReceiverCardId",
+                        column: x => x.ReceiverCardId,
+                        principalTable: "Cards",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_Transactions_Cards_SenderCardId",
+                        column: x => x.SenderCardId,
+                        principalTable: "Cards",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Restrict);
                 });
@@ -253,9 +268,19 @@ namespace APIBankingDiplom.Migrations
                 column: "ReceiverBalanceId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_Transactions_ReceiverCardId",
+                table: "Transactions",
+                column: "ReceiverCardId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_Transactions_SenderBalanceId",
                 table: "Transactions",
                 column: "SenderBalanceId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Transactions_SenderCardId",
+                table: "Transactions",
+                column: "SenderCardId");
         }
 
         /// <inheritdoc />

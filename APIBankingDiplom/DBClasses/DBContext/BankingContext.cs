@@ -26,7 +26,7 @@ namespace APIBankingDiplom.DBClasses.DBContext
         #endregion
         #region Connect to database
         private static readonly string connectionString = Environment.GetEnvironmentVariable("API_DATABASE_CONNECTION_STRING") ?? throw new InvalidOperationException("API_DATABASE_CONNECTION_STRING is missing!");
-        protected override async void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
         {
             optionsBuilder.UseSqlServer(connectionString);
         }
@@ -36,9 +36,21 @@ namespace APIBankingDiplom.DBClasses.DBContext
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<TransactionModel>()
+                .HasOne(t => t.SenderCard)
+                .WithMany()
+                .HasForeignKey(t => t.SenderCardId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<TransactionModel>()
                 .HasOne(t => t.SenderBalance)
                 .WithMany()
                 .HasForeignKey(t => t.SenderBalanceId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            modelBuilder.Entity<TransactionModel>()
+                .HasOne(t => t.ReceiverCard)
+                .WithMany()
+                .HasForeignKey(t => t.ReceiverCardId)
                 .OnDelete(DeleteBehavior.Restrict);
 
             modelBuilder.Entity<TransactionModel>()
@@ -150,45 +162,78 @@ namespace APIBankingDiplom.DBClasses.DBContext
         {
             return await Cards.AnyAsync(c => c.CardNumber.Equals(cardNumber));
         }
+        private static readonly ObjectResult CardNotFound = ResponseFactory.Create(StatusCodes.Status404NotFound, SecurityMeasures.GenerateErrorObject("Card has not been found!"));
+        private static readonly ObjectResult CardIsBlocked = ResponseFactory.Create(StatusCodes.Status403Forbidden, SecurityMeasures.CardIsBlocked);
+        private static readonly ObjectResult CardIsExpired = ResponseFactory.Create(StatusCodes.Status406NotAcceptable, SecurityMeasures.CardIsExpired);
         public async Task<AvailabilityResult<CardModel>> CheckCardAvailability(string cardNumber, int userId)
         {
             CardModel card = await GetCardAsync(cardNumber, userId);
 
             if (card is null)
-                return AvailabilityFactory.Create(card, ResponseFactory.Create(StatusCodes.Status404NotFound, SecurityMeasures.GenerateErrorObject("Card has not been found!")));
+                return AvailabilityFactory.Create(card, CardNotFound);
 
             if (card.Status is BankingEnums.CardStatus.Blocked)
-                return AvailabilityFactory.Create(card, ResponseFactory.Create(StatusCodes.Status403Forbidden, SecurityMeasures.CardIsBlocked));
+                return AvailabilityFactory.Create(card, CardIsBlocked);
 
             if (card.Status is BankingEnums.CardStatus.Expired)
-                return AvailabilityFactory.Create(card, ResponseFactory.Create(StatusCodes.Status406NotAcceptable, SecurityMeasures.CardIsExpired));
+                return AvailabilityFactory.Create(card, CardIsExpired);
 
-            return AvailabilityFactory.Create(card, ResponseFactory.Create(StatusCodes.Status200OK));
+            return AvailabilityFactory.Create(card, ResponseFactory.Success);
         }
-        public async Task<AvailabilityResult<CardBalanceModel>> CheckCardBalanceAvailability(string cardNumber, int userId, BankingEnums.Currency currency, decimal? withdrawMoney = null)
+        private static readonly ObjectResult CardBalanceDoesNotExist = ResponseFactory.Create(StatusCodes.Status400BadRequest, SecurityMeasures.CardBalanceDoesNotExist);
+        private static readonly ObjectResult CardBalanceInsufficientFunds = ResponseFactory.Create(StatusCodes.Status400BadRequest, SecurityMeasures.CardBalanceInsufficientFunds);
+        public async Task<AvailabilityResult<CardBalanceModel>> CheckCardBalanceAvailability(string cardNumber, int userId, BankingEnums.Currency currency, decimal withdrawMoney = decimal.Zero)
         {
+            ObjectResult moneyValidation = IsMoneyAmountValid(withdrawMoney);
+            if (moneyValidation.StatusCode is not StatusCodes.Status200OK)
+                return AvailabilityFactory.Create<CardBalanceModel>(null, moneyValidation);
+
             AvailabilityResult<CardModel> cardResult = await CheckCardAvailability(cardNumber, userId);
             if (!cardResult.IsSuccess)
                 return AvailabilityFactory.Create<CardBalanceModel>(null, cardResult.Response);
 
             CardBalanceModel balance = await GetCardBalanceAsync(cardResult.Item!.Id, currency);
             if (balance is null)
-                return AvailabilityFactory.Create<CardBalanceModel>(null, ResponseFactory.Create(StatusCodes.Status400BadRequest, SecurityMeasures.CardBalanceDoesNotExist));
+                return AvailabilityFactory.Create<CardBalanceModel>(null, CardBalanceDoesNotExist);
 
-            if (withdrawMoney.HasValue && balance.Balance < withdrawMoney.Value)
-                return AvailabilityFactory.Create<CardBalanceModel>(null, ResponseFactory.Create(StatusCodes.Status406NotAcceptable, SecurityMeasures.CardBalanceInsufficientFunds));
+            if (balance.Balance < withdrawMoney)
+                return AvailabilityFactory.Create<CardBalanceModel>(null, CardBalanceInsufficientFunds);
 
-            return AvailabilityFactory.Create(balance, ResponseFactory.Create(StatusCodes.Status200OK));
+            return AvailabilityFactory.Create(balance, ResponseFactory.Success);
         }
+        private static readonly ObjectResult CardBalanceMaxTwoDecimals = ResponseFactory.Create(StatusCodes.Status400BadRequest, SecurityMeasures.CardBalanceMaxTwoDecimals);
+        private static readonly ObjectResult CardBalanceMoneyMustBePositive = ResponseFactory.Create(StatusCodes.Status400BadRequest, SecurityMeasures.CardBalanceMoneyMustBePositive);
         public ObjectResult IsMoneyAmountValid(decimal money)
         {
-            if (money != Math.Round(money, 2))
-                return ResponseFactory.Create(StatusCodes.Status400BadRequest, SecurityMeasures.CardBalanceMaxTwoDecimals);
+            if (money != Math.Round(money, 2)) // Checking if money decimal has more than 2 decimals (therefore is invalid)
+                return CardBalanceMaxTwoDecimals;
 
-            if (money <= 0)
-                return ResponseFactory.Create(StatusCodes.Status400BadRequest, SecurityMeasures.CardBalanceMoneyMustBePositive);
+            if (money < 0)
+                return CardBalanceMoneyMustBePositive;
 
-            return ResponseFactory.Create(StatusCodes.Status200OK);
+            return ResponseFactory.Success;
+        }
+        public async Task<AvailabilityResult<CardBalanceModel>> DepositAsync(string cardNumber, int userId, BankingEnums.Currency currency, decimal money)
+        {
+            AvailabilityResult<CardBalanceModel> balanceResult = await CheckCardBalanceAvailability(cardNumber, userId, currency);
+            if (!balanceResult.IsSuccess)
+                return AvailabilityFactory.Create<CardBalanceModel>(null, balanceResult.Response);
+
+            CardBalanceModel balance = balanceResult.Item!;
+            balance.Balance = balance.Balance + money;
+
+            return AvailabilityFactory.Create(balance, balanceResult.Response);
+        }
+        public async Task<AvailabilityResult<CardBalanceModel>> WithdrawAsync(string cardNumber, int userId, BankingEnums.Currency currency, decimal money)
+        {
+            AvailabilityResult<CardBalanceModel> balanceResult = await CheckCardBalanceAvailability(cardNumber, userId, currency, money);
+            if (!balanceResult.IsSuccess)
+                return AvailabilityFactory.Create<CardBalanceModel>(null, balanceResult.Response);
+
+            CardBalanceModel balance = balanceResult.Item!;
+            balance.Balance = balance.Balance - money;
+
+            return AvailabilityFactory.Create(balance, balanceResult.Response);
         }
         #endregion
         #region Card Numbers Generation
@@ -264,6 +309,11 @@ namespace APIBankingDiplom.DBClasses.DBContext
         public string GeneratePersonalIdentificationNumber()
         {
             return GenerateRandomNumber(0, 10000).ToString("D4");
+        }
+        // Should use this one in SecurityMeasures and make this RNG its own class in GeneralUtilities
+        public int GenerateBCryptSaltFactor()
+        {
+            return GenerateRandomNumber(10, 13);
         }
         #endregion
     }

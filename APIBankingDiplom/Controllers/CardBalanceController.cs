@@ -101,12 +101,9 @@ namespace APIBankingDiplom.Controllers
             UserModel? user = HttpContext.Items["ValidatedUser"] as UserModel;
             return await SecurityMeasures.TryExecutingAsync(async () =>
             {
-                AvailabilityResult<CardBalanceModel> balanceResult = await _bankingContext.CheckCardBalanceAvailability(cardNumber, user!.Id, currency);
-                if (!balanceResult.IsSuccess)
-                    return balanceResult.Response;
-
-                CardBalanceModel balance = balanceResult.Item!;
-                balance.Balance = balance.Balance + money;
+                AvailabilityResult<CardBalanceModel> result = await _bankingContext.DepositAsync(cardNumber, user!.Id, currency, money);
+                if (!result.IsSuccess)
+                    return result.Response;
 
                 await _bankingContext.SaveChangesAsync();
                 return Ok();
@@ -115,19 +112,12 @@ namespace APIBankingDiplom.Controllers
         [HttpPatch("Withdraw")]
         public async Task<IActionResult> WithdrawAsync(string cardNumber, BankingEnums.Currency currency, decimal money)
         {
-            ObjectResult result = _bankingContext.IsMoneyAmountValid(money);
-            if (result.StatusCode is not StatusCodes.Status200OK)
-                return result;
-
             UserModel? user = HttpContext.Items["ValidatedUser"] as UserModel;
             return await SecurityMeasures.TryExecutingAsync(async () =>
             {
-                AvailabilityResult<CardBalanceModel> balanceResult = await _bankingContext.CheckCardBalanceAvailability(cardNumber, user!.Id, currency, money);
-                if (!balanceResult.IsSuccess)
-                    return balanceResult.Response;
-
-                CardBalanceModel balance = balanceResult.Item!;
-                balance.Balance = balance.Balance - money;
+                AvailabilityResult<CardBalanceModel> result = await _bankingContext.WithdrawAsync(cardNumber, user!.Id, currency, money);
+                if (!result.IsSuccess)
+                    return result.Response;
 
                 await _bankingContext.SaveChangesAsync();
                 return Ok();

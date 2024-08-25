@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace APIBankingDiplom.Migrations
 {
     [DbContext(typeof(BankingContext))]
-    [Migration("20240824021954_InitialMigration")]
+    [Migration("20240824210601_InitialMigration")]
     partial class InitialMigration
     {
         /// <inheritdoc />
@@ -254,11 +254,6 @@ namespace APIBankingDiplom.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("decimal(15,2)");
 
-                    b.Property<string>("Currency")
-                        .IsRequired()
-                        .HasMaxLength(3)
-                        .HasColumnType("nvarchar(3)");
-
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -266,8 +261,24 @@ namespace APIBankingDiplom.Migrations
                     b.Property<int>("ReceiverBalanceId")
                         .HasColumnType("int");
 
+                    b.Property<int>("ReceiverCardId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("ReceiverCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
                     b.Property<int>("SenderBalanceId")
                         .HasColumnType("int");
+
+                    b.Property<int>("SenderCardId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SenderCurrency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
 
                     b.Property<DateTime>("TransactionDate")
                         .HasColumnType("datetime2");
@@ -281,7 +292,11 @@ namespace APIBankingDiplom.Migrations
 
                     b.HasIndex("ReceiverBalanceId");
 
+                    b.HasIndex("ReceiverCardId");
+
                     b.HasIndex("SenderBalanceId");
+
+                    b.HasIndex("SenderCardId");
 
                     b.ToTable("Transactions");
                 });
@@ -423,15 +438,31 @@ namespace APIBankingDiplom.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("APIBankingDiplom.DBClasses.DBModels.CardModel", "ReceiverCard")
+                        .WithMany()
+                        .HasForeignKey("ReceiverCardId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("APIBankingDiplom.DBClasses.DBModels.CardBalanceModel", "SenderBalance")
                         .WithMany()
                         .HasForeignKey("SenderBalanceId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("APIBankingDiplom.DBClasses.DBModels.CardModel", "SenderCard")
+                        .WithMany()
+                        .HasForeignKey("SenderCardId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.Navigation("ReceiverBalance");
 
+                    b.Navigation("ReceiverCard");
+
                     b.Navigation("SenderBalance");
+
+                    b.Navigation("SenderCard");
                 });
 #pragma warning restore 612, 618
         }
